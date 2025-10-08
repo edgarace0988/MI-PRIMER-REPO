@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laboratorio Virtual 3D: Leyes de Newton</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background-color: #111827; /* bg-gray-900 */
+            color: #f3f4f6; /* text-gray-200 */
+        }
+        #info-panel {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            background-color: rgba(17, 24, 39, 0.85); /* bg-gray-900 with opacity */
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid #374151; /* border-gray-700 */
+            max-width: 350px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        canvas {
+            display: block;
+        }
+        .law-button {
+            transition: all 0.2s ease-in-out;
+        }
+        .law-button.active {
+            background-color: #3b82f6; /* bg-blue-600 */
+            color: white;
+            transform: scale(1.05);
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #374151; /* bg-gray-700 */
+            border-radius: 5px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #3b82f6; /* bg-blue-600 */
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid white;
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #3b82f6;
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid white;
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div id="info-panel" class="text-gray-200">
+        <h1 class="text-xl font-bold mb-2 text-white">Leyes de Newton</h1>
+        <p class="text-xs text-gray-400 mb-3">Usa el mouse para rotar, mover y hacer zoom.</p>
+
+        <div class="mb-3">
+            <h2 class="text-base font-semibold text-white">Selecciona una Simulación</h2>
+            <div class="grid grid-cols-3 gap-2 mt-2">
+                <button id="law1-btn" class="law-button bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-2 rounded-lg text-xs">1ª Ley</button>
+                <button id="law2-btn" class="law-button bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-2 rounded-lg text-xs">2ª Ley</button>
+                <button id="law3-btn" class="law-button bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-2 rounded-lg text-xs">3ª Ley</button>
+                <button id="cart-btn" class="law-button bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-2 rounded-lg text-xs">Carrito</button>
+                <button id="rocket-btn" class="law-button bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-2 rounded-lg text-xs">Cohete</button>
+                <button id="billiard-btn" class="law-button bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-2 rounded-lg text-xs">Billar</button>
+            </div>
+        </div>
+
+        <div id="law-description-container" class="p-3 bg-gray-800 rounded-lg mb-3 max-h-56 overflow-y-auto">
+            <!-- El contenido se inyectará aquí con JS -->
+        </div>
+        
+        <div id="controls" class="space-y-2">
+            <!-- Los controles se llenarán dinámicamente con JS -->
+        </div>
+
+        <button id="reset-btn" class="w-full mt-3 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+            Reiniciar Simulación
+        </button>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- Variables Globales ---
+        let scene, camera, renderer, controls, clock, ambientLight, directionalLight;
+        let cube, ground, cube2, cart, rocket, thrustEffect;
+        let cartWheels = [];
+        let forceArrow, reactionArrow, billiardForceArrow, billiardReactionArrow;
+        let velocity = new THREE.Vector3(0, 0, 0);
+        let acceleration = new THREE.Vector3(0, 0, 0);
+        let force = new THREE.Vector3(0, 0, 0);
+        let mass = 2.0;
+        let frictionCoefficient = 0.1;
+        let currentLaw = 0;
+        let isFollowingRocket = false;
+        let stars, moon, mars, clouds;
+        let cueBall, objectBall, billiardTable;
+        let cameraOffset = new THREE.Vector3();
+        let isUserInteracting = false;
+
+        const skyColorDay = new THREE.Color(0x87ceeb);
+        const skyColorSpace = new THREE.Color(0x111827);
+
+        // --- Elementos del DOM ---
+        const law1Btn = document.getElementById('law1-btn');
+        const law2Btn = document.getElementById('law2-btn');
+        const law3Btn = document.getElementById('law3-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const controlsDiv = document.getElementById('controls');
+        const lawDescriptionContainer = document.getElementById('law-description-container');
+        const cartBtn = document.getElementById('cart-btn');
+        const rocketBtn = document.getElementById('rocket-btn');
+        const billiardBtn = document.getElementById('billiard-btn');
+        const buttons = [law1Btn, law2Btn, law3Btn, cartBtn, rocketBtn, billiardBtn];
+        
+        // --- Contenido de las Leyes ---
+        const lawContent = {
+            1: { title: "1ª Ley: Ley de la Inercia", html: `...` }, // Contenido omitido por brevedad
+            2: { title: "2ª Ley: Ley Fundamental de la Dinámica", html: `...` },
+            3: { title: "3ª Ley: Principio de Acción y Reacción", html: `...` },
+            4: { title: "Fenómeno: Carrito en Movimiento", html: `...` },
+            5: { title: "Aplicación: Cohete Espacial", html: `...` },
+            6: {
+                title: "Fenómeno: Billar",
+                html: `
+                    <p class="text-xs mt-1 text-gray-300"><strong>El billar es un ejemplo clásico donde las tres leyes interactúan perfectamente.</strong></p>
+                    <ul class="list-disc list-inside text-xs space-y-1 text-gray-400 mt-2">
+                        <li><strong>1ª Ley (Inercia):</strong> Las bolas están en reposo hasta que la bola blanca (bola de tiro) las golpea. Una vez en movimiento, seguirían moviéndose si no fuera por la fricción de la mesa.</li>
+                        <li><strong>2ª Ley (F=ma):</strong> La <strong>fuerza</strong> que aplicas al disparar causa una <strong>aceleración</strong> en la bola blanca. A más fuerza, mayor velocidad inicial.</li>
+                        <li><strong>3ª Ley (Acción-Reacción):</strong> Durante la colisión, la bola blanca ejerce una fuerza sobre la otra (acción), y la segunda bola ejerce una fuerza igual y opuesta sobre la blanca (reacción), haciendo que ambas cambien de dirección.</li>
+                    </ul>
+                     <h4 class="font-semibold text-gray-200 mt-2 mb-1 text-sm">En el Laboratorio:</h4>
+                    <p class="text-xs text-gray-400">Ajusta la fuerza del disparo y observa las flechas de fuerza que aparecen en la colisión para visualizar la 3ª Ley.</p>
+                `
+            }
+        };
+        // Llenar contenido omitido
+        Object.assign(lawContent[1], {html: `<p class="text-xs mt-1 text-gray-300"><strong>"Un objeto permanece en su estado de reposo o de movimiento rectilíneo uniforme a menos que una fuerza neta externa actúe sobre él."</strong></p><h4 class="font-semibold text-gray-200 mt-2 mb-1 text-sm">Conceptos Clave:</h4><ul class="list-disc list-inside text-xs space-y-1 text-gray-400"><li><strong>Inercia:</strong> Resistencia al cambio de movimiento.</li><li><strong>Masa:</strong> Medida cuantitativa de la inercia.</li><li><strong>Fuerza Neta:</strong> Suma de fuerzas. Si es cero, no hay aceleración.</li></ul><h4 class="font-semibold text-gray-200 mt-2 mb-1 text-sm">En el Laboratorio:</h4><p class="text-xs text-gray-400">Al "dar un empujón", aplicas una fuerza. Sin fricción, el cubo se movería para siempre por su inercia.</p>`});
+        Object.assign(lawContent[2], {html: `<p class="text-xs mt-1 text-gray-300"><strong>F = m * a</strong>. La aceleración es directamente proporcional a la fuerza e inversamente proporcional a la masa.</p><h4 class="font-semibold text-gray-200 mt-2 mb-1 text-sm">Conceptos Clave:</h4><ul class="list-disc list-inside text-xs space-y-1 text-gray-400"><li><strong>Fuerza (F):</strong> Causa la aceleración.</li><li><strong>Aceleración (a):</strong> Cambio de velocidad en el tiempo.</li><li><strong>Relaciones:</strong> Más fuerza = más aceleración. Más masa = menos aceleración.</li></ul><h4 class="font-semibold text-gray-200 mt-2 mb-1 text-sm">En el Laboratorio:</h4><p class="text-xs text-gray-400">Usa los deslizadores. Verás que al aumentar la <strong>Fuerza</strong> el cubo acelera más rápido, y al aumentar la <strong>Masa</strong>, acelera más lento.</p>`});
+        Object.assign(lawContent[3], {html: `<p class="text-xs mt-1 text-gray-300"><strong>"Por cada acción, existe una reacción igual en magnitud y opuesta en dirección."</strong></p><h4 class="font-semibold text-gray-200 mt-2 mb-1 text-sm">Conceptos Clave:</h4><ul class="list-disc list-inside text-xs space-y-1 text-gray-400"><li><strong>Pares de Fuerzas:</strong> Siempre vienen en pares.</li><li><strong>Cuerpos Diferentes:</strong> Actúan en objetos distintos, por eso no se anulan.</li><li><strong>Igual y Opuesta:</strong> Misma intensidad, dirección contraria.</li></ul><h4 class="font-semibold text-gray-200 mt-2 mb-1 text-sm">En el Laboratorio:</h4><p class="text-xs text-gray-400">La flecha roja (acción) y la amarilla (reacción) son siempre iguales en tamaño pero opuestas. Son un reflejo perfecto.</p>`});
+        Object.assign(lawContent[4], {html: `<p class="text-xs mt-1 text-gray-300"><strong>Analicemos las 3 leyes de Newton en un solo fenómeno.</strong></p><ul class="list-disc list-inside text-xs space-y-1 text-gray-400 mt-2"><li><strong>1ª Ley:</strong> Si no aplicas fuerza (Fuerza = 0), el carrito permanece en reposo. Si ya está en movimiento, tenderá a seguir moviéndose (inercia).</li><li><strong>2ª Ley:</strong> Al aplicar <strong>fuerza</strong>, el carrito <strong>acelera</strong>. Si aumentas su <strong>masa</strong>, necesitarás más fuerza para lograr la misma aceleración.</li><li><strong>3ª Ley:</strong> Para moverse, las ruedas empujan el suelo hacia atrás (acción), y el suelo empuja el carrito hacia adelante (reacción).</li></ul><h4 class="font-semibold text-gray-200 mt-2 mb-1 text-sm">En el Laboratorio:</h4><p class="text-xs text-gray-400">Experimenta con la fuerza y la masa para ver la 2ª Ley en acción. Observa la 1ª Ley al poner la fuerza en cero.</p>`});
+        Object.assign(lawContent[5], {html: `<p class="text-xs mt-1 text-gray-300"><strong>El cohete es un sistema perfecto para ver las tres leyes en acción simultáneamente.</strong></p><ul class="list-disc list-inside text-xs space-y-1 text-gray-400 mt-2"><li><strong>3ª Ley (Acción-Reacción):</strong> El motor expulsa gases a alta velocidad hacia abajo (acción). Como reacción, los gases empujan el cohete hacia arriba.</li><li><strong>2ª Ley (F=ma):</strong> La fuerza de <strong>empuje</strong> de los motores causa una <strong>aceleración</strong> hacia arriba. A mayor masa, menor será la aceleración para el mismo empuje.</li><li><strong>1ª Ley (Inercia):</strong> Una vez en el espacio, si el cohete apaga sus motores, continuará moviéndose en línea recta a velocidad constante debido a su inercia.</li></ul><h4 class="font-semibold text-gray-200 mt-2 mb-1 text-sm">En el Laboratorio:</h4><p class="text-xs text-gray-400">Observa el entorno cambiar de día a espacio a medida que asciendes, atravesando nubes y viendo aparecer las estrellas y planetas.</p>`});
+
+        // --- Funciones de Inicialización ---
+        function init() {
+            scene = new THREE.Scene();
+            clock = new THREE.Clock();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 3, 10);
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            document.body.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.addEventListener('start', () => { isUserInteracting = true; });
+            controls.addEventListener('end', () => { 
+                isUserInteracting = false;
+                if (isFollowingRocket) {
+                    cameraOffset.copy(camera.position).sub(rocket.position);
+                }
+            });
+
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 20, 5);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+
+            createGround();
+            createCubes();
+            createCart();
+            createRocket();
+            createArrows();
+            createSpaceEnvironment();
+            createBilliardScene();
+            
+            window.addEventListener('resize', onWindowResize);
+            law1Btn.addEventListener('click', () => setupSimulationForLaw(1));
+            law2Btn.addEventListener('click', () => setupSimulationForLaw(2));
+            law3Btn.addEventListener('click', () => setupSimulationForLaw(3));
+            cartBtn.addEventListener('click', () => setupSimulationForLaw(4));
+            rocketBtn.addEventListener('click', () => setupSimulationForLaw(5));
+            billiardBtn.addEventListener('click', () => setupSimulationForLaw(6));
+            resetBtn.addEventListener('click', resetSimulation);
+            
+            setupSimulationForLaw(1);
+            animate();
+        }
+
+        function createBilliardScene() {
+            billiardTable = new THREE.Group();
+            const tableHeight = 0.75;
+            
+            // Surface
+            const surfaceGeo = new THREE.BoxGeometry(10, 0.2, 5);
+            const surfaceMat = new THREE.MeshStandardMaterial({ color: 0x006400 }); // Dark Green
+            const surface = new THREE.Mesh(surfaceGeo, surfaceMat);
+            surface.position.y = tableHeight;
+            surface.receiveShadow = true;
+            billiardTable.add(surface);
+
+            // Ball Geometry & Material
+            const ballGeo = new THREE.SphereGeometry(0.2, 32, 32);
+            const cueBallMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+            const objectBallMat = new THREE.MeshStandardMaterial({ color: 0xffd700 }); // Gold
+
+            cueBall = new THREE.Mesh(ballGeo, cueBallMat);
+            cueBall.castShadow = true;
+            cueBall.userData.velocity = new THREE.Vector3();
+            cueBall.userData.mass = 1;
+            billiardTable.add(cueBall);
+
+            objectBall = new THREE.Mesh(ballGeo, objectBallMat);
+            objectBall.castShadow = true;
+            objectBall.userData.velocity = new THREE.Vector3();
+            objectBall.userData.mass = 1;
+            billiardTable.add(objectBall);
+
+            billiardForceArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0, 0xff0000);
+            billiardReactionArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0, 0xffff00);
+            scene.add(billiardForceArrow);
+            scene.add(billiardReactionArrow);
+
+            scene.add(billiardTable);
+        }
+
+        function createGround() {
+            const groundGeometry = new THREE.PlaneGeometry(50, 50);
+            const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x27272a }); // zinc-800
+            ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+        }
+        function createCubes() {
+            const cubeGeometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+            const cubeMaterial = new THREE.MeshStandardMaterial({ color: 0x3b82f6 }); // blue-500
+            cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+            cube.position.y = 0.75;
+            cube.castShadow = true;
+            scene.add(cube);
+            const c = new THREE.MeshStandardMaterial({ color: 0x16a34a }); // green-600
+            cube2 = new THREE.Mesh(cubeGeometry, c);
+            cube2.position.y = 0.75;
+            cube2.position.x = 3;
+            cube2.castShadow = true;
+            scene.add(cube2);
+        }
+        function createCart() {
+            cart = new THREE.Group;
+            const bodyGeo = new THREE.BoxGeometry(3, 1, 2);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0xdc2626 });// red-600
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.position.y = .5;
+            body.castShadow = !0;
+            cart.add(body);
+            const wheelGeo = new THREE.CylinderGeometry(.5, .5, .5, 32);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x4b5563 });// gray-600
+            const wheelPos = [new THREE.Vector3(-1.1, -.25, 1.05), new THREE.Vector3(1.1, -.25, 1.05), new THREE.Vector3(-1.1, -.25, -1.05), new THREE.Vector3(1.1, -.25, -1.05)];
+            for (const pos of wheelPos) {
+                const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+                wheel.rotation.x = Math.PI / 2;
+                wheel.position.copy(pos);
+                cart.add(wheel);
+                cartWheels.push(wheel);
+            }
+            cart.position.y = .75;
+            scene.add(cart);
+        }
+        function createRocket() {
+            rocket = new THREE.Group();
+            const bodyGeometry = new THREE.CylinderGeometry(.5, 1, 4, 32);
+            const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xe5e7eb });
+            const c = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            c.castShadow = !0;
+            rocket.add(c);
+            const noseGeometry = new THREE.ConeGeometry(.5, 1.5, 32);
+            const noseMaterial = new THREE.MeshStandardMaterial({ color: 0xdc2626 });
+            const f = new THREE.Mesh(noseGeometry, noseMaterial);
+            f.position.y = 2.75;
+            f.castShadow = !0;
+            rocket.add(f);
+            for (let g = 0; g < 4; g++) {
+                const finGeometry = new THREE.BoxGeometry(.2, 1.5, 1.5);
+                const finMaterial = new THREE.MeshStandardMaterial({ color: 0xdc2626 });
+                const fin = new THREE.Mesh(finGeometry, finMaterial);
+                const angle = g / 4 * Math.PI * 2;
+                fin.position.set(Math.cos(angle) * .8, -1.2, Math.sin(angle) * .8);
+                fin.lookAt(rocket.position);
+                rocket.add(fin);
+            }
+            const thrustGeometry = new THREE.ConeGeometry(.6, 2, 32);
+            const thrustMaterial = new THREE.MeshStandardMaterial({ color: 0xfb923c, emissive: 0xf97316, transparent: !0, opacity: .8 });
+            thrustEffect = new THREE.Mesh(thrustGeometry, thrustMaterial);
+            thrustEffect.position.y = -3;
+            thrustEffect.rotation.x = Math.PI;
+            rocket.add(thrustEffect);
+            rocket.position.y = 2.5;
+            scene.add(rocket);
+        }
+        function createArrows() {
+            forceArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), cube.position, 0, 0xff0000);
+            scene.add(forceArrow);
+            reactionArrow = new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), cube2.position, 0, 0xffff00);
+            scene.add(reactionArrow);
+        }
+        function createSpaceEnvironment() {
+            const starVertices = [];
+            for (let d = 0; d < 15e3; d++) {
+                const x = THREE.MathUtils.randFloatSpread(2e3);
+                const y = THREE.MathUtils.randFloatSpread(2e3);
+                const z = THREE.MathUtils.randFloatSpread(2e3);
+                new THREE.Vector3(x, y, z).length() > 200 && starVertices.push(x, y, z);
+            }
+            const starGeo = new THREE.BufferGeometry;
+            starGeo.setAttribute("position", new THREE.Float32BufferAttribute(starVertices, 3));
+            const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: .7 });
+            stars = new THREE.Points(starGeo, starMat);
+            scene.add(stars);
+            const moonGeo = new THREE.SphereGeometry(15, 32, 32);
+            const moonMat = new THREE.MeshStandardMaterial({ color: 0xd1d5db, emissive: 0x111827 });
+            moon = new THREE.Mesh(moonGeo, moonMat);
+            moon.position.set(100, 150, -300);
+            scene.add(moon);
+            const marsGeo = new THREE.SphereGeometry(10, 32, 32);
+            const marsMat = new THREE.MeshStandardMaterial({ color: 0xe89d74, emissive: 0x111827 });
+            mars = new THREE.Mesh(marsGeo, marsMat);
+            mars.position.set(-200, 50, -400);
+            scene.add(mars);
+            clouds = new THREE.Group;
+            const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: !0, opacity: .3 });
+            for (let m = 0; m < 50; m++) {
+                const cloudGeo = new THREE.SphereGeometry(Math.random() * 20 + 10, 8, 8);
+                const cloud = new THREE.Mesh(cloudGeo, cloudMat);
+                cloud.position.set((Math.random() - .5) * 500, Math.random() * 20 + 30, (Math.random() - .5) * 500);
+                clouds.add(cloud);
+            }
+            scene.add(clouds);
+        }
+
+        // --- Lógica de la Simulación ---
+        function setupSimulationForLaw(lawNumber) {
+            currentLaw = lawNumber;
+            resetSimulation();
+
+            buttons.forEach((btn, index) => {
+                btn.classList.toggle('active', index + 1 === lawNumber);
+            });
+
+            lawDescriptionContainer.innerHTML = `
+                <h3 class="text-lg font-bold text-blue-400 mb-2">${lawContent[lawNumber].title}</h3>
+                ${lawContent[lawNumber].html}
+            `;
+
+            // Hide all objects by default
+            cube.visible = cube2.visible = cart.visible = rocket.visible = false;
+            forceArrow.visible = reactionArrow.visible = false;
+            billiardForceArrow.visible = billiardReactionArrow.visible = false;
+            stars.visible = moon.visible = mars.visible = clouds.visible = false;
+            billiardTable.visible = false;
+            ground.visible = true;
+            scene.background = skyColorSpace;
+
+            controlsDiv.innerHTML = ''; 
+
+            switch (lawNumber) {
+                case 1: cube.visible = true; setupLaw1(); break;
+                case 2: cube.visible = true; forceArrow.visible = true; setupLaw2(); break;
+                case 3: cube.visible = true; cube2.visible = true; forceArrow.visible = true; reactionArrow.visible = true; setupLaw3(); break;
+                case 4: cart.visible = true; forceArrow.visible = true; setupCartSimulation(); break;
+                case 5:
+                    rocket.visible = stars.visible = moon.visible = mars.visible = clouds.visible = true;
+                    scene.background = skyColorDay;
+                    setupRocketSimulation();
+                    break;
+                case 6:
+                    billiardTable.visible = true;
+                    setupBilliardSimulation();
+                    break;
+            }
+        }
+        
+        function setupBilliardSimulation() {
+            camera.position.set(0, 8, 6);
+            controls.target.set(0, 0, 0);
+
+            controlsDiv.innerHTML = `
+                <div>
+                    <label for="force-slider" class="text-xs font-medium">Fuerza del Disparo: <span id="force-value">50</span></label>
+                    <input type="range" id="force-slider" min="10" max="150" value="50" step="1" class="w-full mt-1">
+                </div>
+                <button id="shoot-btn" class="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-sm">Disparar</button>
+            `;
+
+            document.getElementById('shoot-btn').addEventListener('click', () => {
+                if (cueBall.userData.velocity.lengthSq() > 0.001) return; // Can't shoot while moving
+                const forceSlider = document.getElementById('force-slider');
+                const shotForce = parseFloat(forceSlider.value);
+                // Shoot towards the object ball
+                const direction = new THREE.Vector3().subVectors(objectBall.position, cueBall.position).normalize();
+                const impulse = direction.multiplyScalar(shotForce / 10); // Scaled for effect
+                cueBall.userData.velocity.add(impulse);
+            });
+
+            const forceSlider = document.getElementById('force-slider');
+            const forceValue = document.getElementById('force-value');
+            forceSlider.addEventListener('input', (e) => {
+                forceValue.textContent = e.target.value;
+            });
+        }
+
+        function setupRocketSimulation() {
+            ground.visible = true;
+            camera.position.set(0, 5, 30);
+            
+            controlsDiv.innerHTML = `
+                <div>
+                    <label for="force-slider" class="text-xs font-medium">Empuje del Motor: <span id="force-value">0</span> N</label>
+                    <input type="range" id="force-slider" min="0" max="150" value="0" step="1" class="w-full mt-1">
+                </div>
+                <div>
+                    <label for="mass-slider" class="text-xs font-medium">Masa del Cohete: <span id="mass-value">2.0</span> kg</label>
+                    <input type="range" id="mass-slider" min="1" max="10" value="2.0" step="0.1" class="w-full mt-1">
+                </div>
+                <div id="data-display" class="mt-2 p-2 bg-gray-800 rounded-lg text-xs grid grid-cols-2 gap-2">
+                   <div>Velocidad: <span id="velocity-value">0.00</span> m/s</div>
+                   <div>Altitud: <span id="altitude-value">0.00</span> m</div>
+                </div>
+                <button id="follow-btn" class="w-full mt-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors">Activar Seguimiento</button>
+                <p class="text-xs text-center text-gray-400 mt-2">El empuje debe superar el peso (masa * 9.8) para despegar.</p>
+                `;
+
+            const forceSlider = document.getElementById('force-slider');
+            const massSlider = document.getElementById('mass-slider');
+            const forceValue = document.getElementById('force-value');
+            const massValue = document.getElementById('mass-value');
+            
+            mass = parseFloat(massSlider.value);
+            massValue.textContent = mass.toFixed(1);
+
+            force.y = parseFloat(forceSlider.value);
+            forceValue.textContent = force.y.toFixed(1);
+
+            forceSlider.addEventListener('input', (e) => {
+                force.y = parseFloat(e.target.value);
+                forceValue.textContent = force.y.toFixed(1);
+            });
+            massSlider.addEventListener('input', (e) => {
+                mass = parseFloat(e.target.value);
+                massValue.textContent = mass.toFixed(1);
+            });
+
+            const followBtn = document.getElementById('follow-btn');
+            followBtn.addEventListener('click', () => {
+                isFollowingRocket = !isFollowingRocket;
+                if (isFollowingRocket) {
+                    cameraOffset.copy(camera.position).sub(rocket.position);
+                    followBtn.textContent = 'Desactivar Seguimiento';
+                    followBtn.classList.replace('bg-indigo-600', 'bg-yellow-600');
+                    followBtn.classList.replace('hover:bg-indigo-700', 'hover:bg-yellow-700');
+                } else {
+                    followBtn.textContent = 'Activar Seguimiento';
+                    followBtn.classList.replace('bg-yellow-600', 'bg-indigo-600');
+                     followBtn.classList.replace('hover:bg-yellow-700', 'hover:bg-indigo-700');
+                }
+            });
+        }
+
+        function setupLaw1() {
+            controlsDiv.innerHTML = `<div class="flex justify-center space-x-2"><button id="push-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-sm">Dar un empujón</button></div><div id="data-display" class="mt-3 p-2 bg-gray-800 rounded-lg text-xs">Velocidad: <span id="velocity-value">0.00</span> m/s</div>`;
+            document.getElementById("push-btn").addEventListener("mousedown", () => { velocity.length() < .1 && (velocity.x = 10) });
+        }
+        function setupLaw2() {
+            forceArrow.visible = !0;
+            controlsDiv.innerHTML = `<div><label for="force-slider" class="text-xs font-medium">Fuerza Aplicada: <span id="force-value">5</span> N</label><input type="range" id="force-slider" min="0" max="20" value="5" step="0.1" class="w-full mt-1"></div><div><label for="mass-slider" class="text-xs font-medium">Masa del Objeto: <span id="mass-value">2.0</span> kg</label><input type="range" id="mass-slider" min="0.5" max="10" value="2.0" step="0.1" class="w-full mt-1"></div><div id="data-display" class="mt-2 p-2 bg-gray-800 rounded-lg text-xs grid grid-cols-2 gap-2"><div>Velocidad: <span id="velocity-value">0.00</span> m/s</div><div>Aceleración: <span id="acceleration-value">0.00</span> m/s²</div></div>`;
+            const a = document.getElementById("force-slider"),
+                b = document.getElementById("mass-slider"),
+                c = document.getElementById("force-value"),
+                d = document.getElementById("mass-value");
+            mass = parseFloat(b.value);
+            d.textContent = mass.toFixed(1);
+            force.x = parseFloat(a.value);
+            c.textContent = force.x.toFixed(1);
+            a.addEventListener("input", e => { force.x = parseFloat(e.target.value), c.textContent = force.x.toFixed(1) });
+            b.addEventListener("input", e => { mass = parseFloat(e.target.value), d.textContent = mass.toFixed(1), cube.scale.set(Math.pow(mass / 2, 1 / 3), Math.pow(mass / 2, 1 / 3), Math.pow(mass / 2, 1 / 3)) });
+        }
+        function setupCartSimulation() {
+            controlsDiv.innerHTML = `<div><label for="force-slider" class="text-xs font-medium">Fuerza Aplicada: <span id="force-value">5</span> N</label><input type="range" id="force-slider" min="0" max="40" value="5" step="0.1" class="w-full mt-1"></div><div><label for="mass-slider" class="text-xs font-medium">Masa del Carrito: <span id="mass-value">2.0</span> kg</label><input type="range" id="mass-slider" min="0.5" max="10" value="2.0" step="0.1" class="w-full mt-1"></div><div id="data-display" class="mt-2 p-2 bg-gray-800 rounded-lg text-xs grid grid-cols-2 gap-2"><div>Velocidad: <span id="velocity-value">0.00</span> m/s</div><div>Aceleración: <span id="acceleration-value">0.00</span> m/s²</div></div>`;
+            const a = document.getElementById("force-slider"),
+                b = document.getElementById("mass-slider"),
+                c = document.getElementById("force-value"),
+                d = document.getElementById("mass-value");
+            mass = parseFloat(b.value);
+            d.textContent = mass.toFixed(1);
+            force.x = parseFloat(a.value);
+            c.textContent = force.x.toFixed(1);
+            a.addEventListener("input", e => { force.x = parseFloat(e.target.value), c.textContent = force.x.toFixed(1) });
+            b.addEventListener("input", e => { mass = parseFloat(e.target.value), d.textContent = mass.toFixed(1); const f = Math.pow(mass / 2, 1 / 3);
+                cart.scale.set(f, f, f) });
+        }
+        function setupLaw3() {
+            cube2.visible = !0;
+            forceArrow.visible = !0;
+            reactionArrow.visible = !0;
+            cube.position.set(-1.5, .75, 0);
+            cube2.position.set(1.5, .75, 0);
+            controlsDiv.innerHTML = `<div><label for="force-slider" class="text-xs font-medium">Fuerza de Interacción: <span id="force-value">10</span> N</label><input type="range" id="force-slider" min="0" max="20" value="10" step="0.1" class="w-full mt-1"></div><p class="text-xs text-center text-gray-400 mt-2">Observa cómo la fuerza de acción (roja) sobre el cubo azul genera una fuerza de reacción (amarilla) igual y opuesta sobre el cubo verde.</p>`;
+            const a = document.getElementById("force-slider"),
+                b = document.getElementById("force-value");
+            force.x = parseFloat(a.value);
+            b.textContent = force.x.toFixed(1);
+            a.addEventListener("input", c => { force.x = parseFloat(c.target.value), b.textContent = force.x.toFixed(1) });
+        }
+
+        function resetSimulation() {
+            velocity.set(0, 0, 0);
+            acceleration.set(0, 0, 0);
+            force.set(0, 0, 0);
+            mass = 2.0;
+            isFollowingRocket = false;
+
+            cube.position.set(0, 0.75, 0); cube.rotation.set(0, 0, 0); cube.scale.set(1, 1, 1);
+            cart.position.set(0, 0.75, 0); cart.rotation.set(0, 0, 0); cart.scale.set(1, 1, 1);
+            cartWheels.forEach(w => w.rotation.set(Math.PI / 2, 0, 0));
+            rocket.position.set(0, 2.5, 0); rocket.rotation.set(0,0,0);
+            
+            // Reset billiard balls
+            const ballY = 0.75 + 0.1 + 0.2; // table height + surface thickness + ball radius
+            cueBall.position.set(0, ballY, 1);
+            objectBall.position.set(0, ballY, -1);
+            cueBall.userData.velocity.set(0,0,0);
+            objectBall.userData.velocity.set(0,0,0);
+
+            if (controls) { controls.target.set(0, 0, 0); }
+            camera.position.set(0, 3, 10);
+            
+            if (currentLaw === 3) { cube.position.set(-1.5, 0.75, 0); cube2.position.set(1.5, 0.75, 0); }
+        }
+        
+        // --- Bucle de Animación ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const deltaTime = clock.getDelta();
+
+            updatePhysics(deltaTime);
+            updateVisuals();
+
+            if (currentLaw === 5 && isFollowingRocket) {
+                camera.position.copy(rocket.position).add(cameraOffset);
+                controls.target.copy(rocket.position);
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function updatePhysics(dt) {
+            if (dt > .1) return;
+            switch (currentLaw) {
+                case 1:
+                    {
+                        const a = velocity.clone().multiplyScalar(-frictionCoefficient);
+                        velocity.add(a.multiplyScalar(dt));
+                        velocity.length() < .01 && velocity.set(0, 0, 0);
+                        cube.position.add(velocity.clone().multiplyScalar(dt));
+                        break
+                    }
+                case 2:
+                case 4:
+                    if (mass > 0) acceleration.copy(force).divideScalar(mass);
+                    velocity.add(acceleration.clone().multiplyScalar(dt));
+                    const a = currentLaw === 2 ? 5 : 2,
+                        b = velocity.clone().multiplyScalar(-frictionCoefficient * a);
+                    velocity.add(b.multiplyScalar(dt));
+                    const c = currentLaw === 2 ? cube : cart;
+                    c.position.add(velocity.clone().multiplyScalar(dt));
+                    currentLaw === 4 && (c = velocity.x / (.5 * cart.scale.x), cartWheels.forEach(d => { d.rotation.z -= c * dt }));
+                    break;
+                case 3:
+                    break;
+                case 5:
+                    const gravity = new THREE.Vector3(0, -9.8, 0),
+                        netForce = new THREE.Vector3(0, 0, 0);
+                    force.y > 0 && netForce.add(force);
+                    rocket.position.y < 100 && netForce.add(gravity.multiplyScalar(mass));
+                    mass > 0 && acceleration.copy(netForce).divideScalar(mass);
+                    velocity.add(acceleration.clone().multiplyScalar(dt));
+                    rocket.position.add(velocity.clone().multiplyScalar(dt));
+                    rocket.position.y < 2.5 && (rocket.position.y = 2.5, velocity.y = 0, acceleration.y = 0);
+                    break;
+                case 6:
+                    {
+                        const balls = [cueBall, objectBall];
+                        const friction = 0.5;
+
+                        // Update positions and apply friction
+                        balls.forEach(ball => {
+                            const frictionForce = ball.userData.velocity.clone().multiplyScalar(-friction * dt);
+                            ball.userData.velocity.add(frictionForce);
+                            if (ball.userData.velocity.lengthSq() < 0.001) ball.userData.velocity.set(0, 0, 0);
+                            ball.position.add(ball.userData.velocity.clone().multiplyScalar(dt));
+                        });
+
+                        // Collision detection and response
+                        const dist = cueBall.position.distanceTo(objectBall.position);
+                        const radiusSum = 0.4; // 2 * radius
+                        if (dist < radiusSum) {
+                            const v1 = cueBall.userData.velocity;
+                            const v2 = objectBall.userData.velocity;
+                            const x1 = cueBall.position;
+                            const x2 = objectBall.position;
+                            
+                            const normal = x2.clone().sub(x1).normalize();
+                            const vRel = v1.clone().sub(v2);
+                            const speedAlongNormal = vRel.dot(normal);
+
+                            if (speedAlongNormal < 0) {
+                                // Visualize Forces
+                                billiardForceArrow.position.copy(x2);
+                                billiardReactionArrow.position.copy(x1);
+                                billiardForceArrow.setDirection(normal);
+                                billiardReactionArrow.setDirection(normal.clone().negate());
+                                const forceMagnitude = Math.min(Math.abs(speedAlongNormal) * 0.4, 1.5);
+                                billiardForceArrow.setLength(forceMagnitude);
+                                billiardReactionArrow.setLength(forceMagnitude);
+                                billiardForceArrow.visible = true;
+                                billiardReactionArrow.visible = true;
+                                setTimeout(() => {
+                                    billiardForceArrow.visible = false;
+                                    billiardReactionArrow.visible = false;
+                                }, 400);
+
+                                // Physics of elastic collision for equal masses
+                                const v1_parallel = normal.clone().multiplyScalar(v1.dot(normal));
+                                const v1_perp = v1.clone().sub(v1_parallel);
+                                const v2_parallel = normal.clone().multiplyScalar(v2.dot(normal));
+                                const v2_perp = v2.clone().sub(v2_parallel);
+
+                                v1.copy(v2_parallel).add(v1_perp);
+                                v2.copy(v1_parallel).add(v2_perp);
+
+                                // Separate overlapping balls
+                                const overlap = radiusSum - dist;
+                                const correction = normal.clone().multiplyScalar(overlap / 2);
+                                x1.sub(correction);
+                                x2.add(correction);
+                            }
+                        }
+                        break
+                    }
+            }
+            cube.position.y < .75 && (cube.position.y = .75)
+        }
+        
+        function updateVisuals() {
+            const a = document.getElementById("velocity-value"),
+                b = document.getElementById("acceleration-value"),
+                c = document.getElementById("altitude-value");
+            switch (currentLaw) {
+                case 1:
+                    a && (a.textContent = velocity.length().toFixed(2));
+                    break;
+                case 2:
+                    forceArrow.position.copy(cube.position);
+                    forceArrow.setLength(force.x / 5);
+                    a && (a.textContent = velocity.length().toFixed(2));
+                    b && (b.textContent = acceleration.length().toFixed(2));
+                    break;
+                case 3:
+                    {
+                        const d = .75,
+                            e = new THREE.Vector3(cube.position.x + d, cube.position.y, cube.position.z),
+                            f = new THREE.Vector3(cube2.position.x - d, cube2.position.y, cube2.position.z);
+                        forceArrow.position.copy(e);
+                        forceArrow.setDirection(new THREE.Vector3(-1, 0, 0));
+                        forceArrow.setLength(force.x / 5);
+                        reactionArrow.position.copy(f);
+                        reactionArrow.setDirection(new THREE.Vector3(1, 0, 0));
+                        reactionArrow.setLength(force.x / 5);
+                        break
+                    }
+                case 4:
+                    forceArrow.position.copy(cart.position);
+                    forceArrow.setDirection(new THREE.Vector3(1, 0, 0));
+                    forceArrow.setLength(force.x / 8);
+                    a && (a.textContent = velocity.length().toFixed(2));
+                    b && (b.textContent = acceleration.length().toFixed(2));
+                    break;
+                case 5:
+                    thrustEffect.visible = force.y > .1;
+                    thrustEffect.visible && (d = Math.min(force.y / 20, 2.5), thrustEffect.scale.set(d, d, d), thrustEffect.material.opacity = .6 + Math.random() * .4);
+                    a && (a.textContent = velocity.y.toFixed(2));
+                    c && (c.textContent = (rocket.position.y - 2.5).toFixed(2));
+                    const e = rocket.position.y,
+                        f = Math.min(e / 100, 1);
+                    scene.background.lerpColors(skyColorDay, skyColorSpace, f);
+                    ambientLight.intensity = THREE.MathUtils.lerp(.5, .1, f);
+                    directionalLight.intensity = THREE.MathUtils.lerp(.8, .2, f);
+                    ground.visible = e < 150;
+                    clouds.children.forEach(g => { g.material.opacity = Math.max(0, .3 - f * .5) });
+                    break
+            }
+        }
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- Iniciar ---
+        init();
+
+    </script>
+</body>
+</html>
